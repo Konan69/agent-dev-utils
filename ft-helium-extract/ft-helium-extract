@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  printf '%s\n' 'Usage: ft-helium-extract; requires WSL, Windows PowerShell, UAC, cryptography. Set HELIUM_PROFILE_DIR to your Windows Helium profile directory.'
+  exit 0
+fi
+# ft-helium-extract — VSS-snapshot Helium, decrypt ct0+auth_token, save to ~/.config/ft-helium/cookies.
+# Triggers a Windows UAC prompt. Run only when the saved cookies stop working.
+set -euo pipefail
+WIN_TEMP=$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')
+PS_SCRIPT_WIN="${WIN_TEMP}helium-vss-extract.ps1"
+PS_SCRIPT_WSL=$(wslpath -u "$PS_SCRIPT_WIN")
+META_WSL=$(wslpath -u "${WIN_TEMP}helium-x-meta.json")
+EXTRACT_DIR_WSL=$(wslpath -u "${WIN_TEMP}helium-x-extract")
+export META_WSL
+
+: "${HELIUM_PROFILE_DIR:?Set HELIUM_PROFILE_DIR to your Windows Helium profile directory}"
+export HELIUM_PROFILE_DIR
+cat > "$PS_SCRIPT_WSL" <<'PS1'
+$ErrorActionPreference = 'Stop'
+$out = @{ ok = $false; error = $null; cookies_path = $null; aes_key_b64 = $null }
+$shadow = $null
+try {
+    $res = ([wmiclass]'\\.\root\cimv2:Win32_ShadowCopy').Create('C:\', 'ClientAccessible')
+    if ($res.ReturnValue -ne 0) { throw "Win32_ShadowCopy.Create returned $($res.ReturnValue)" }
+    $shadow = Get-CimInstance Win32_ShadowCopy -Filter "ID='$($res.ShadowID)'"
+    if (-not $shadow) { throw "Shadow $($res.ShadowID) not found after Create" }
+    $deviceRoot = $shadow.DeviceObject + '\'
+    $profileDir = $env:HELIUM_PROFILE_DIR
+    if (-not $profileDir) { throw 'Set HELIUM_PROFILE_DIR to the Windows Helium profile directory' }
+    $userData = Split-Path $profileDir -Parent
+    $relCookies = (Join-Path $profileDir 'Network\Cookies').Substring(3)
+    $relLocal = (Join-Path $userData 'Local State').Substring(3)
+    $destDir = Join-Path $env:LOCALAPPDATA 'Temp\helium-x-extract'
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    $destCookies = Join-Path $destDir 'Cookies'
+    Copy-Item -LiteralPath (Join-Path $deviceRoot $relCookies) -Destination $destCookies -Force
+    $destLocal = Join-Path $destDir 'Local State'
+    Copy-Item -LiteralPath (Join-Path $deviceRoot $relLocal) -Destination $destLocal -Force
+    icacls $destDir /grant "$($env:USERNAME):(OI)(CI)RX" | Out-Null
+    $ls = Get-Content -Raw -LiteralPath $destLocal | ConvertFrom-Json
+    $enc = [Convert]::FromBase64String($ls.os_crypt.encrypted_key)
+    Add-Type -AssemblyName System.Security
+    $key = [System.Security.Cryptography.ProtectedData]::Unprotect($enc[5..($enc.Length-1)], $null, 'CurrentUser')
+    $out.ok = $true; $out.cookies_path = $destCookies
+    $out.aes_key_b64 = [Convert]::ToBase64String($key)
+} catch {
+    $out.error = $_.Exception.Message
+} finally {
+    if ($shadow) { try { $shadow | Remove-CimInstance } catch {} }
+}
+$out | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Temp\helium-x-meta.json') -Encoding UTF8
+PS1
+
+python3 - "$PS_SCRIPT_WSL" <<'PYCONFIG'
+import os, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+profile = os.environ["HELIUM_PROFILE_DIR"].replace("'", "''")
+path.write_text(path.read_text().replace('$env:HELIUM_PROFILE_DIR', "'" + profile + "'"))
+PYCONFIG
+rm -f "$META_WSL"
+echo "Approve the UAC prompt for VSS snapshot..."
+powershell.exe -NoProfile -Command "Start-Process powershell.exe -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$PS_SCRIPT_WIN' -Wait" >/dev/null
+
+if [[ ! -r "$META_WSL" ]]; then
+  echo "extract failed: meta file not produced" >&2
+  exit 1
+fi
+
+umask 077
+mkdir -p ~/.config/ft-helium
+python3 - <<'PY' > ~/.config/ft-helium/cookies
+import base64, json, sqlite3, sys, os
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+with open(os.environ["META_WSL"], encoding="utf-8-sig") as f:
+    meta = json.load(f)
+if not meta.get("ok"): sys.exit(f"meta not ok: {meta.get('error')}")
+key = base64.b64decode(meta["aes_key_b64"])
+import subprocess
+wsl = subprocess.check_output(["wslpath", "-u", meta["cookies_path"]], text=True).strip()
+conn = sqlite3.connect(f"file:{wsl}?mode=ro", uri=True); cur = conn.cursor()
+cur.execute("SELECT host_key,name,encrypted_value,last_access_utc FROM cookies "
+            "WHERE host_key IN ('.x.com','x.com','.twitter.com','twitter.com') "
+            "  AND name IN ('ct0','auth_token') ORDER BY last_access_utc DESC")
+aes = AESGCM(key); best = {}
+for host, name, ev, _ in cur.fetchall():
+    if not ev or len(ev) < 31 or bytes(ev[:3]) not in (b"v10", b"v11"): continue
+    try: raw = aes.decrypt(bytes(ev[3:15]), bytes(ev[15:]), None)
+    except Exception: continue
+    for off in (32, 0):
+        try: plain = raw[off:].decode("utf-8"); break
+        except UnicodeDecodeError: continue
+    else: continue
+    best.setdefault(name, plain)
+if "ct0" not in best or "auth_token" not in best: sys.exit(f"missing cookies; got {list(best)}")
+for n in ("ct0", "auth_token"): print(f"{n}={best[n]}")
+PY
+chmod 600 ~/.config/ft-helium/cookies
+
+# wipe Windows-side artifacts
+rm -rf "$PS_SCRIPT_WSL" "$META_WSL" "$EXTRACT_DIR_WSL"
+
+echo "saved cookies to ~/.config/ft-helium/cookies (mode 600)"

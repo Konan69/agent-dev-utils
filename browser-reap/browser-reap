@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  printf '%s\n' 'Usage: browser-reap [max-age-minutes] [--dry-run] (default age: 60)'
+  exit 0
+fi
+# browser-reap — kill stale agent-browser Chrome fleets and screencast recorders.
+#
+# Browser lanes (Codex/pi driving `agent-browser`) leave headless Chrome running
+# when a session ends without `agent-browser close`, and a recording left open
+# keeps an ffmpeg mjpeg pipe at 10 fps. On 2026-09-16 three orphaned fleets (75
+# processes, 7.2 GB, 10-12 h old) plus two stale ffmpeg recorders pushed WSL to
+# 20 of 22 GB and Windows into hard paging. This reaps anything older than the
+# age threshold, so a lane still running (minutes old) is never touched.
+#
+# Usage: browser-reap [max-age-minutes]   (default 60)   add --dry-run to list only
+set -u
+max_min=60; dry=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) dry=1 ;;
+    *) max_min="$arg" ;;
+  esac
+done
+max_s=$((max_min * 60))
+freed_kb=0; count=0
+while read -r pid etimes rss args; do
+  [ "$etimes" -ge "$max_s" ] || continue
+  count=$((count + 1)); freed_kb=$((freed_kb + rss))
+  if [ $dry -eq 1 ]; then
+    echo "would kill $pid ($((etimes / 60))m, $((rss / 1024))MB): ${args:0:100}"
+  else
+    kill "$pid" 2>/dev/null
+  fi
+done < <(ps -eo pid=,etimes=,rss=,args= | grep -E '\.agent-browser/browsers|ffmpeg .*image2pipe|agent-browser( |$).*daemon' | grep -v grep)
+[ $dry -eq 0 ] && sleep 2 && ps -eo pid=,etimes=,args= | grep -E '\.agent-browser/browsers|ffmpeg .*image2pipe' | grep -v grep | awk -v m="$max_s" '$2>=m {print $1}' | xargs -r kill -9 2>/dev/null
+echo "browser-reap: ${count} processes older than ${max_min}m, ~$((freed_kb / 1024)) MB $([ $dry -eq 1 ] && echo 'would be freed' || echo freed)"

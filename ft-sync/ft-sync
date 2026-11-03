@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  printf '%s\n' 'Usage: ft-sync [ft sync options]; FT_COOKIES_FILE overrides ~/.config/ft-helium/cookies'
+  exit 0
+fi
+# ft-sync — wrap `ft sync` using cookies cached at ~/.config/ft-helium/cookies.
+# To refresh cookies: re-run the Helium VSS extract (see ~/bin/ft-helium-extract).
+set -euo pipefail
+COOKIES_FILE="${FT_COOKIES_FILE:-${HOME}/.config/ft-helium/cookies}"
+
+if [[ ! -r "$COOKIES_FILE" ]]; then
+  echo "no cookies at $COOKIES_FILE — run ft-helium-extract first" >&2
+  exit 1
+fi
+
+ct0=$(awk -F= '$1=="ct0"{print $2; exit}' "$COOKIES_FILE")
+auth_token=$(awk -F= '$1=="auth_token"{print $2; exit}' "$COOKIES_FILE")
+
+if [[ -z "${ct0:-}" || -z "${auth_token:-}" ]]; then
+  echo "cookies file malformed (missing ct0 or auth_token)" >&2
+  exit 1
+fi
+
+exec ft sync --cookies "$ct0" "$auth_token" "$@"

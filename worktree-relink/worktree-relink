@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  printf '%s\n' 'Usage: worktree-relink <worktree> <workspace-scope>'
+  exit 0
+fi
+# Make a seeded worktree resolve its own workspace packages.
+set -euo pipefail
+dst=$(cd "${1:?worktree}" && pwd -P); scope=${2:?workspace scope required (for example @workspace)}
+n=0
+while IFS= read -r nm; do
+  [ -L "$nm" ] || continue
+  src=$(readlink -f "$nm")
+  # Every symlinked node_modules becomes a real dir, scope or not: `.gitignore`'s `node_modules/`
+  # matches directories only, so a symlink shows as untracked work and the gate's warm tree copies
+  # it as a dangling PC path (ERR_PNPM_PACKAGE_MANAGER_SYMLINK_FAILED, 2026-10-29).
+  rm "$nm"; mkdir "$nm"
+  for entry in "$src"/* "$src"/.[!.]*; do
+    [ -e "$entry" ] || continue
+    name=$(basename "$entry")
+    case "$name" in
+      # Per-checkout run state and caches: sharing them with the sibling makes pnpm refuse to run
+      # scripts (ERR_PNPM_UNSAFE_TASK_RUN_STATE_PATH, 2026-10-29) and lets two checkouts' Vite
+      # caches overwrite each other. Each worktree gets its own empty dir.
+      .pnpm-task-run-state-v1|.vite|.vite-temp) mkdir "$nm/$name"; continue ;;
+      # pnpm rewrites this file; a copy keeps the sibling's install record without writing through.
+      .pnpm-workspace-state-v1.json) cp "$entry" "$nm/$name"; continue ;;
+      # pnpm's bin links are relative (`tsc -> ../@workspace/compiler/disabled.mjs`); copied as links
+      # they resolve inside this worktree, so a workspace package's bin is this checkout's own.
+      # A whole-dir link sent them to the sibling and compiler-policy refused the blocker bins
+      # as not repo-owned (2026-10-29).
+      .bin) mkdir "$nm/.bin"; cp -a "$entry"/. "$nm/.bin/"; continue ;;
+    esac
+    if [ "$name" = "$scope" ]; then
+      mkdir "$nm/$scope"
+      for pkg in "$src/$scope"/*; do
+        rel=$(readlink "$pkg")
+        # pnpm's link is relative to the sibling's node_modules dir; the same path under ours
+        # lands on the worktree's copy of that package.
+        ln -s "$rel" "$nm/$scope/$(basename "$pkg")"
+      done
+    else
+      ln -s "$(readlink -f "$entry")" "$nm/$name"
+    fi
+  done
+  n=$((n+1))
+done < <(find "$dst" -name node_modules -not -path '*/node_modules/*' -not -path '*/.git/*' | sort)
+# Repair worktrees relinked before the state dirs above were kept per checkout.
+while IFS= read -r nm; do
+  for name in .pnpm-task-run-state-v1 .vite .vite-temp; do
+    [ -L "$nm/$name" ] && { rm "$nm/$name"; mkdir "$nm/$name"; }
+  done
+  if [ -L "$nm/.bin" ]; then
+    _src=$(readlink -f "$nm/.bin"); rm "$nm/.bin"; mkdir "$nm/.bin"; cp -a "$_src"/. "$nm/.bin/"
+  fi
+  [ -L "$nm/.pnpm-workspace-state-v1.json" ] && { cp --remove-destination "$(readlink -f "$nm/.pnpm-workspace-state-v1.json")" "$nm/.pnpm-workspace-state-v1.json"; }
+done < <(find "$dst" -name node_modules -not -path '*/node_modules/*' -not -path '*/.git/*' | sort)
+echo "relinked $n node_modules dirs under $dst to its own $scope packages"

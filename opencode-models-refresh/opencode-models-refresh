@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  printf '%s\n' 'Usage: opencode-models-refresh; refresh ~/.cache/opencode/models.json from models.dev'
+  exit 0
+fi
+# models.dev/api.json takes >10s to download here, so opencode's own fetch times out
+# and it keeps a stale model list (stale free models). Refresh the cache it reads.
+set -euo pipefail
+dest="$HOME/.cache/opencode/models.json"
+mkdir -p "$(dirname "$dest")"
+tmp="$(mktemp "$dest.refresh.XXXX")"
+trap 'rm -f "$tmp"' EXIT
+curl -fsS --max-time 300 https://models.dev/api.json -o "$tmp"
+python3 -c "import json,sys;d=json.load(open(sys.argv[1]));assert 'opencode' in d" "$tmp"
+mv "$tmp" "$dest"
+rm -f "$HOME"/.cache/opencode/models.json.*.tmp
