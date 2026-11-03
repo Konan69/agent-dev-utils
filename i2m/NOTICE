@@ -1,0 +1,38 @@
+Only local setup and run wrappers are included. No upstream model code,
+weights, images, or Blender renderer is distributed here. The repository MIT
+license covers these wrappers, not separately downloaded dependencies.
+
+Upstream checkouts must be supplied under I2M_ROOT using these directory names.
+
+Hunyuan3D-2 and Hunyuan3D-2mini
+Code and weights use the Tencent Hunyuan 3D 2.0 Community License Agreement.
+It excludes the European Union, United Kingdom and South Korea, restricts
+acceptable uses and training other models, and requires a separate grant for
+licensees above its one-million-monthly-active-user threshold. Redistribution
+has agreement, notice, and attribution requirements. Read the full terms before
+using or downloading. These models are not MIT licensed.
+https://github.com/Tencent/Hunyuan3D-2/blob/main/LICENSE
+https://huggingface.co/tencent/Hunyuan3D-2/blob/main/LICENSE.txt
+https://huggingface.co/tencent/Hunyuan3D-2mini
+
+TripoSG
+Code and model card declare MIT, copyright VAST-AI-Research and contributors.
+Its upstream NOTICE identifies BRIA RMBG-1.4 under bria-rmbg-1.4 and code from
+Diffusers under Apache-2.0. Those dependency terms still apply.
+https://github.com/VAST-AI-Research/TripoSG/blob/main/LICENSE
+https://github.com/VAST-AI-Research/TripoSG/blob/main/NOTICE
+https://huggingface.co/VAST-AI/TripoSG
+
+InstantMesh
+Code and model card declare Apache-2.0.
+https://github.com/TencentARC/InstantMesh/blob/main/LICENSE
+https://huggingface.co/TencentARC/InstantMesh
+
+Talking Head Anime 3
+Code uses MIT, copyright 2022 Pramook Khungurn. The upstream README licenses
+model weights under Creative Commons Attribution 4.0 International.
+The OktayAlpk model mirror's own card terms were not confirmed. Verify that
+mirror and preserve the original model attribution before downloading it.
+https://github.com/pkhungurn/talking-head-anime-3-demo/blob/main/LICENSE
+https://github.com/pkhungurn/talking-head-anime-3-demo/blob/main/README.md
+https://huggingface.co/OktayAlpk/talking-head-anime-3
