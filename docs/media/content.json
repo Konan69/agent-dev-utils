@@ -1,0 +1,30 @@
+{
+  "repo": "agent-dev-utils",
+  "accent": "#C9A2FF",
+  "hero": {
+    "command": "m=node_modules/@acme/ui; realpath $m; worktree-relink . @acme; realpath $m",
+    "output": [
+      { "text": "/tmp/wt-demo/app/packages/ui", "style": "muted" },
+      { "text": "relinked 1 node_modules dirs under /tmp/wt-demo/app-wt to its own @acme packages" },
+      { "text": "/tmp/wt-demo/app-wt/packages/ui", "style": "accent" }
+    ],
+    "value": "A seeded worktree now resolves its own workspace packages."
+  },
+  "diagram": {
+    "direction": "TB",
+    "nodes": [
+      { "id": "extract", "label": "ft-helium-extract", "sublabel": "bash in WSL" },
+      { "id": "vss", "label": "VSS snapshot", "sublabel": "PowerShell, UAC prompt" },
+      { "id": "decrypt", "label": "AES-GCM decrypt", "sublabel": "DPAPI key, Cookies db" },
+      { "id": "file", "label": "cookies file", "sublabel": "~/.config/ft-helium/cookies" },
+      { "id": "sync", "label": "ft-sync", "sublabel": "ft sync --cookies" }
+    ],
+    "edges": [
+      { "from": "extract", "to": "vss", "label": "elevate" },
+      { "from": "vss", "to": "decrypt", "label": "key + copy" },
+      { "from": "decrypt", "to": "file", "label": "ct0, auth_token" },
+      { "from": "file", "to": "sync", "label": "read" }
+    ],
+    "primary": ["extract", "vss", "decrypt", "file", "sync"]
+  }
+}
