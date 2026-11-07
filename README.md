@@ -1,5 +1,7 @@
 # agent-dev-utils
 
+*A junk drawer for the agent age. Every tool in here was born at 3 a.m. to kill one specific annoyance.*
+
 Small standalone scripts for a developer who runs coding agents on Linux or WSL: cleanup, git worktree repair, browser automation over CDP, cookie extraction, model and deployment helpers.
 
 ![Terminal running worktree-relink in a seeded git worktree. Before the run, node_modules/@acme/ui resolves to the main checkout. After the run, it resolves to the worktree's own packages/ui.](docs/media/hero.gif)
