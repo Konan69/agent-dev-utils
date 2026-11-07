@@ -1,6 +1,6 @@
 # agent-dev-utils
 
-*A junk drawer for the agent age. Every tool in here was born at 3 a.m. to kill one specific annoyance.*
+Small scripts I wrote while running coding agents all day.
 
 Small standalone scripts for a developer who runs coding agents on Linux or WSL: cleanup, git worktree repair, browser automation over CDP, cookie extraction, model and deployment helpers.
 
